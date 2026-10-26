@@ -1,4 +1,4 @@
-//NAIVES BAYES ALGORITHM
+// Naive Bayes algorithm
 
 #include <iostream>
 #include <sstream>
@@ -8,6 +8,7 @@
 #include <fstream>
 #include <climits>
 #include <cctype>
+#include "../include/modelpersistence.h"
 
 class NaiveBayes{
     public:
@@ -18,6 +19,8 @@ class NaiveBayes{
     int totalNonPoliticalSpeeches = 0;
     int totalPoliticalSpeechWords = 0;
     int totalNonPoliticalSpeechWords = 0;
+    double smoothingAlpha = 1.0;
+    PreprocessingConfig preprocessingConfig;
     // std::map<std::string, int> countOf_data2;
 
 };
@@ -32,15 +35,22 @@ class DataSet : public NaiveBayes{
         while(textStream >> word){
             std::size_t firstCharacter = 0;
             std::size_t lastCharacter = word.size();
-            while(firstCharacter < lastCharacter && std::ispunct(static_cast<unsigned char>(word[firstCharacter]))){
-                firstCharacter++;
-            }
-            while(lastCharacter > firstCharacter && std::ispunct(static_cast<unsigned char>(word[lastCharacter - 1]))){
-                lastCharacter--;
+            if(preprocessingConfig.stripEdgePunctuation){
+                while(firstCharacter < lastCharacter && std::ispunct(static_cast<unsigned char>(word[firstCharacter]))){
+                    firstCharacter++;
+                }
+                while(lastCharacter > firstCharacter && std::ispunct(static_cast<unsigned char>(word[lastCharacter - 1]))){
+                    lastCharacter--;
+                }
             }
             word = word.substr(firstCharacter, lastCharacter - firstCharacter);
             if(word.empty()){
                 continue;
+            }
+            if(preprocessingConfig.lowercaseTokens){
+                for(std::string::iterator character = word.begin(); character != word.end(); ++character){
+                    *character = static_cast<char>(std::tolower(static_cast<unsigned char>(*character)));
+                }
             }
 
             words.push_back(word);
@@ -74,18 +84,20 @@ class DataSet : public NaiveBayes{
     //rumus menghitung teorema bayes untuk data yang ada
     std::string probability(std::string& speechText){
         //kumpulkan semua data yang ada menjadi 1
-        float totalSpeechCount = totalPoliticalSpeeches + totalNonPoliticalSpeeches;
-        //bagi data1 dengan keseluruhan data yang ada untuk menghitung probabilitas
-        //laplace smoothing untuk menghindari pembagian dengan 0 tambahkan 1 ke total_pspeech
-        float politicalSpeechLogProbability = std::log((float)(totalPoliticalSpeeches + 1) / (float)(totalSpeechCount + 1));
-        float nonPoliticalSpeechLogProbability = std::log((float)(totalNonPoliticalSpeeches + 1) / (float)(totalSpeechCount + 1));
+        double totalSpeechCount = totalPoliticalSpeeches + totalNonPoliticalSpeeches;
+        double politicalSpeechLogProbability = std::log(
+            (totalPoliticalSpeeches + smoothingAlpha) /
+            (totalSpeechCount + 2.0 * smoothingAlpha));
+        double nonPoliticalSpeechLogProbability = std::log(
+            (totalNonPoliticalSpeeches + smoothingAlpha) /
+            (totalSpeechCount + 2.0 * smoothingAlpha));
         
-        float accumulatedPoliticalSpeechLogProbability = politicalSpeechLogProbability;
-        float accumulatedNonPoliticalSpeechLogProbability = nonPoliticalSpeechLogProbability;
+        double accumulatedPoliticalSpeechLogProbability = politicalSpeechLogProbability;
+        double accumulatedNonPoliticalSpeechLogProbability = nonPoliticalSpeechLogProbability;
         
         std::vector<std::string> words = tokenizeText(speechText, false);
         
-        int uniqueVocabularySize = uniqueVocabulary.size();
+        std::size_t uniqueVocabularySize = uniqueVocabulary.size();
         int iteration = 0;
         for(auto& word : words){
             iteration++;
@@ -93,8 +105,12 @@ class DataSet : public NaiveBayes{
             int nonPoliticalSpeechWordCount = nonPoliticalSpeechWordCounts.count(word) ? nonPoliticalSpeechWordCounts[word] : 0;
        
             //hitung likeood data 1 dan data2 
-              float politicalSpeechWordLogProbability = std::log((float)(politicalSpeechWordCount + 1)/ (float)(totalPoliticalSpeechWords + uniqueVocabularySize));
-              float nonPoliticalSpeechWordLogProbability = std::log((float)(nonPoliticalSpeechWordCount + 1)/ (float)(totalNonPoliticalSpeechWords + uniqueVocabularySize));
+              double politicalSpeechWordLogProbability = std::log(
+                  (politicalSpeechWordCount + smoothingAlpha) /
+                  (totalPoliticalSpeechWords + smoothingAlpha * uniqueVocabularySize));
+              double nonPoliticalSpeechWordLogProbability = std::log(
+                  (nonPoliticalSpeechWordCount + smoothingAlpha) /
+                  (totalNonPoliticalSpeechWords + smoothingAlpha * uniqueVocabularySize));
 
               accumulatedNonPoliticalSpeechLogProbability += nonPoliticalSpeechWordLogProbability;
               accumulatedPoliticalSpeechLogProbability += politicalSpeechWordLogProbability;
@@ -212,11 +228,55 @@ bool loadTestDataset(const std::string& datasetPath, std::string& testText){
     return true;
 }
 
-int main(){
+int main(int argc, char* argv[]){
     DataSet data;
-    if(!loadDataset("dataset/train/politicspeech.csv", "politicspeech", "politic speech", data) ||
-       !loadDataset("dataset/train/nonpoliticspeech.csv", "nonpoliticspeech", "non politic speech", data)){
+    const std::string modelPath = "models/models-naivebayes-smoothingAlpha.bin";
+    bool loadSavedModel = false;
+    if(argc > 2 || (argc == 2 && std::string(argv[1]) != "--load-model")){
+        std::cerr << "Penggunaan: " << argv[0] << " [--load-model]" << std::endl;
         return 1;
+    }
+    loadSavedModel = argc == 2;
+
+    std::string modelError;
+    if(loadSavedModel){
+        if(!ModelPersistence::loadModel(
+               modelPath,
+               data.politicalSpeechWordCounts,
+               data.nonPoliticalSpeechWordCounts,
+               data.uniqueVocabulary,
+               data.totalPoliticalSpeeches,
+               data.totalNonPoliticalSpeeches,
+               data.totalPoliticalSpeechWords,
+               data.totalNonPoliticalSpeechWords,
+               data.smoothingAlpha,
+               data.preprocessingConfig,
+               modelError)){
+            std::cerr << modelError << std::endl;
+            return 1;
+        }
+        std::cout << "Model berhasil dimuat dari " << modelPath << std::endl;
+    }else{
+        if(!loadDataset("dataset/train/politicspeech.csv", "politicspeech", "politic speech", data) ||
+           !loadDataset("dataset/train/nonpoliticspeech.csv", "nonpoliticspeech", "non politic speech", data)){
+            return 1;
+        }
+        if(!ModelPersistence::saveModel(
+               modelPath,
+               data.politicalSpeechWordCounts,
+               data.nonPoliticalSpeechWordCounts,
+               data.uniqueVocabulary,
+               data.totalPoliticalSpeeches,
+               data.totalNonPoliticalSpeeches,
+               data.totalPoliticalSpeechWords,
+               data.totalNonPoliticalSpeechWords,
+               data.smoothingAlpha,
+               data.preprocessingConfig,
+               modelError)){
+            std::cerr << modelError << std::endl;
+            return 1;
+        }
+        std::cout << "Model berhasil disimpan ke " << modelPath << std::endl;
     }
 
     std::string testText;

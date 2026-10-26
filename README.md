@@ -17,6 +17,8 @@ Proyek ini merupakan eksperimen klasifikasi teks untuk membedakan dua kategori p
 * Tokenisasi teks sederhana.
 * Pemisahan dataset training dan testing.
 * Statistik frekuensi kata dari dataset politik, nonpolitik, dan testing.
+* Penyimpanan model binary berversi, termasuk statistik kelas, smoothing, dan konfigurasi preprocessing.
+* Pemuatan model tersimpan melalui opsi `--load-model`.
 * Tidak menggunakan library machine learning eksternal.
 
 ## Struktur Repository
@@ -24,6 +26,10 @@ Proyek ini merupakan eksperimen klasifikasi teks untuk membedakan dua kategori p
 ```text
 naivebayescpp-version/
 ├── main.cpp
+├── include/
+│   └── ModelPersistence.h
+├── src/
+│   └── ModelPersistence.cpp
 ├── README.md
 ├── LICENSE
 └── dataset/
@@ -65,19 +71,19 @@ cd <NAMA-FOLDER>
 **Windows (GCC/MinGW-w64):**
 
 ```powershell
-g++ main.cpp -o naivebayes.exe
+g++ -std=c++11 -Iinclude main.cpp src/ModelPersistence.cpp -o naivebayes.exe
 ```
 
 **Linux (GCC):**
 
 ```bash
-g++ main.cpp -o naivebayes
+g++ -std=c++11 -Iinclude main.cpp src/ModelPersistence.cpp -o naivebayes
 ```
 
 **macOS (Clang):**
 
 ```bash
-clang++ main.cpp -o naivebayes
+clang++ -std=c++11 -Iinclude main.cpp src/ModelPersistence.cpp -o naivebayes
 ```
 
 ### 4. Jalankan Program
@@ -87,6 +93,21 @@ clang++ main.cpp -o naivebayes
 ```powershell
 .\naivebayes.exe
 ```
+
+Secara default program melatih model dari dataset dan menyimpannya ke folder
+`models/` dengan nama `models-naivebayes-smoothingAlpha.bin`. Folder `models/`
+akan dibuat otomatis jika belum ada.
+Untuk memakai model yang sudah tersimpan tanpa membaca ulang dataset training:
+
+```powershell
+.\naivebayes.exe --load-model
+```
+
+File `models/models-naivebayes-smoothingAlpha.bin` menyimpan jumlah dokumen per
+kelas, frekuensi kata per kelas, total kata, kosakata, nilai Laplace smoothing,
+konfigurasi preprocessing, dan versi format binary. Jika format file tidak
+didukung atau datanya rusak, program menampilkan error dan berhenti alih-alih
+memakai model yang tidak valid.
 
 **Linux dan macOS:**
 
